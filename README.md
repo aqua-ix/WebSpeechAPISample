@@ -1,5 +1,3 @@
 # WebSpeechAPISample
 
-## TODO
-
-Input text by voice.
+To input text by voice.
