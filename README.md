@@ -1,3 +1,3 @@
 # WebSpeechAPISample
 
-To input text by voice.
+https://aqua-ix.github.io/WebSpeechAPISample/
