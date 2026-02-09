@@ -24,6 +24,14 @@
         #clear-log-btn { background: #2196F3; color: white; border: none; }
         #copy-log-btn { background: #9C27B0; color: white; border: none; }
         #copy-log-btn.copied { background: #4CAF50; }
+        .copy-options {
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        .copy-options label {
+            cursor: pointer;
+            user-select: none;
+        }
         .section {
             margin-bottom: 20px;
             padding: 15px;
@@ -92,6 +100,9 @@
             <button id="clear-log-btn">Clear Log</button>
             <button id="copy-log-btn">Copy Log</button>
             <span id="status" class="status-idle">Idle</span>
+            <div class="copy-options">
+                <label><input type="checkbox" id="include-debug-info"> Copy with debug info (Markdown)</label>
+            </div>
         </div>
     </div>
 
@@ -404,22 +415,71 @@
             log('Log cleared', 'info');
         };
 
-        copyLogBtn.onclick = async () => {
+        const includeDebugInfoCheckbox = document.querySelector('#include-debug-info');
+
+        function buildCopyText() {
             const logEntries = logDiv.querySelectorAll('.log-entry');
-            const logText = Array.from(logEntries).map(entry => entry.textContent).join('\n');
+            const includeDebug = includeDebugInfoCheckbox.checked;
+
+            if (!includeDebug) {
+                return Array.from(logEntries).map(entry => entry.textContent).join('\n');
+            }
+
+            // Markdown formatted output
+            const lines = [];
+            lines.push('# Web Speech API Debug Log');
+            lines.push('');
+
+            // Debug info section
+            lines.push('## Environment');
+            lines.push('');
+            lines.push(`| Item | Value |`);
+            lines.push(`| --- | --- |`);
+            lines.push(`| Browser | ${browserInfo.browserName} ${browserInfo.browserVersion} |`);
+            lines.push(`| Platform | ${browserInfo.platform} |`);
+            lines.push(`| Language | ${browserInfo.language} |`);
+            lines.push(`| Online | ${browserInfo.onLine} |`);
+            lines.push(`| webkitSpeechRecognition | ${browserInfo.webkitSpeechRecognition ? 'Available' : 'Not Available'} |`);
+            lines.push(`| SpeechRecognition | ${browserInfo.SpeechRecognition ? 'Available' : 'Not Available'} |`);
+            lines.push(`| User-Agent | ${browserInfo.userAgent} |`);
+            lines.push(`| Date | ${new Date().toISOString()} |`);
+            lines.push('');
+
+            // Recognition result
+            if (finalTranscript) {
+                lines.push('## Recognition Result');
+                lines.push('');
+                lines.push(finalTranscript);
+                lines.push('');
+            }
+
+            // Log section
+            lines.push('## Log');
+            lines.push('');
+            lines.push('```');
+            Array.from(logEntries).forEach(entry => {
+                lines.push(entry.textContent);
+            });
+            lines.push('```');
+
+            return lines.join('\n');
+        }
+
+        copyLogBtn.onclick = async () => {
+            const copyText = buildCopyText();
 
             try {
-                await navigator.clipboard.writeText(logText);
+                await navigator.clipboard.writeText(copyText);
                 copyLogBtn.textContent = 'Copied!';
                 copyLogBtn.classList.add('copied');
                 setTimeout(() => {
                     copyLogBtn.textContent = 'Copy Log';
                     copyLogBtn.classList.remove('copied');
                 }, 2000);
-            } catch (err) {
+            } catch {
                 // Fallback for browsers that don't support clipboard API
                 const textarea = document.createElement('textarea');
-                textarea.value = logText;
+                textarea.value = copyText;
                 document.body.appendChild(textarea);
                 textarea.select();
                 document.execCommand('copy');
