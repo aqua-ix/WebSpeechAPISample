@@ -1,47 +1,454 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <meta charset="utf-8">
-        <title>My test page</title>
-    </head>
+<head>
+    <meta charset="utf-8">
+    <title>Web Speech API Debug Sample</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin-right: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #start-btn { background: #4CAF50; color: white; border: none; }
+        #stop-btn { background: #f44336; color: white; border: none; }
+        #clear-log-btn { background: #2196F3; color: white; border: none; }
+        #copy-log-btn { background: #9C27B0; color: white; border: none; }
+        #copy-log-btn.copied { background: #4CAF50; }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h3 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        #result-div {
+            min-height: 50px;
+            background: #f9f9f9;
+            padding: 10px;
+        }
+        #log-div {
+            height: 400px;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 5px;
+        }
+        .log-info { color: #9cdcfe; }
+        .log-event { color: #4ec9b0; }
+        .log-error { color: #f48771; background: #3a1d1d; }
+        .log-warning { color: #dcdcaa; }
+        .log-result { color: #b5cea8; }
+        .log-timestamp { color: #808080; }
+        #browser-info {
+            background: #e3f2fd;
+            padding: 10px;
+            font-size: 12px;
+        }
+        #status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+        .status-idle { background: #e0e0e0; }
+        .status-listening { background: #c8e6c9; color: #2e7d32; }
+        .status-error { background: #ffcdd2; color: #c62828; }
+    </style>
+</head>
+<body>
+    <h1>Web Speech API Debug Sample</h1>
 
-    <button id="start-btn">start</button>
-    <button id="stop-btn">stop</button>
-    <div id="result-div"></div>
+    <div class="section">
+        <h3>Browser Information</h3>
+        <div id="browser-info"></div>
+    </div>
+
+    <div class="section">
+        <h3>Controls</h3>
+        <div class="controls">
+            <button id="start-btn">Start Recognition</button>
+            <button id="stop-btn">Stop Recognition</button>
+            <button id="clear-log-btn">Clear Log</button>
+            <button id="copy-log-btn">Copy Log</button>
+            <span id="status" class="status-idle">Idle</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>Recognition Result</h3>
+        <div id="result-div">Waiting for speech...</div>
+    </div>
+
+    <div class="section">
+        <h3>Debug Log</h3>
+        <div id="log-div"></div>
+    </div>
 
     <script>
+        // ========================================
+        // Debug Logger
+        // ========================================
+        const logDiv = document.querySelector('#log-div');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString().substr(11, 12);
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+
+            // Also log to console
+            console.log(`[${timestamp}] [${type.toUpperCase()}]`, message);
+        }
+
+        function logObject(label, obj) {
+            log(`${label}: ${JSON.stringify(obj, null, 2)}`, 'info');
+        }
+
+        // ========================================
+        // Browser Information
+        // ========================================
+        const browserInfoDiv = document.querySelector('#browser-info');
+
+        function getBrowserInfo() {
+            const ua = navigator.userAgent;
+            let browserName = 'Unknown';
+            let browserVersion = 'Unknown';
+
+            if (ua.includes('Edg/')) {
+                browserName = 'Microsoft Edge';
+                browserVersion = ua.match(/Edg\/([\d.]+)/)?.[1] || 'Unknown';
+            } else if (ua.includes('Chrome/')) {
+                browserName = 'Google Chrome';
+                browserVersion = ua.match(/Chrome\/([\d.]+)/)?.[1] || 'Unknown';
+            } else if (ua.includes('Firefox/')) {
+                browserName = 'Firefox';
+                browserVersion = ua.match(/Firefox\/([\d.]+)/)?.[1] || 'Unknown';
+            } else if (ua.includes('Safari/') && !ua.includes('Chrome')) {
+                browserName = 'Safari';
+                browserVersion = ua.match(/Version\/([\d.]+)/)?.[1] || 'Unknown';
+            }
+
+            return {
+                browserName,
+                browserVersion,
+                userAgent: ua,
+                platform: navigator.platform,
+                language: navigator.language,
+                onLine: navigator.onLine,
+                webkitSpeechRecognition: typeof webkitSpeechRecognition !== 'undefined',
+                SpeechRecognition: typeof SpeechRecognition !== 'undefined'
+            };
+        }
+
+        const browserInfo = getBrowserInfo();
+        browserInfoDiv.innerHTML = `
+            <strong>Browser:</strong> ${browserInfo.browserName} ${browserInfo.browserVersion}<br>
+            <strong>Platform:</strong> ${browserInfo.platform}<br>
+            <strong>Language:</strong> ${browserInfo.language}<br>
+            <strong>Online:</strong> ${browserInfo.onLine}<br>
+            <strong>webkitSpeechRecognition:</strong> ${browserInfo.webkitSpeechRecognition ? 'Available' : 'Not Available'}<br>
+            <strong>SpeechRecognition:</strong> ${browserInfo.SpeechRecognition ? 'Available' : 'Not Available'}<br>
+            <strong>User-Agent:</strong> <small>${browserInfo.userAgent}</small>
+        `;
+
+        log(`Browser: ${browserInfo.browserName} ${browserInfo.browserVersion}`, 'info');
+        log(`Platform: ${browserInfo.platform}, Language: ${browserInfo.language}`, 'info');
+        log(`webkitSpeechRecognition: ${browserInfo.webkitSpeechRecognition}, SpeechRecognition: ${browserInfo.SpeechRecognition}`, 'info');
+
+        // ========================================
+        // DOM Elements
+        // ========================================
         const startBtn = document.querySelector('#start-btn');
         const stopBtn = document.querySelector('#stop-btn');
+        const clearLogBtn = document.querySelector('#clear-log-btn');
+        const copyLogBtn = document.querySelector('#copy-log-btn');
         const resultDiv = document.querySelector('#result-div');
+        const statusSpan = document.querySelector('#status');
 
-        SpeechRecognition = webkitSpeechRecognition || SpeechRecognition;
-        let recognition = new SpeechRecognition();
+        function setStatus(status, className) {
+            statusSpan.textContent = status;
+            statusSpan.className = className;
+        }
 
-        recognition.lang = 'ja-JP';
-        recognition.interimResults = true;
-        recognition.continuous = true;
+        // ========================================
+        // Speech Recognition Setup
+        // ========================================
+        let recognition = null;
+        let finalTranscript = '';
 
-        let finalTranscript = ''; // 確定した(黒の)認識結果
+        try {
+            const SpeechRecognitionAPI = window.webkitSpeechRecognition || window.SpeechRecognition;
 
-        recognition.onresult = (event) => {
-            let interimTranscript = ''; // 暫定(灰色)の認識結果
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-            let transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                finalTranscript += transcript;
+            if (!SpeechRecognitionAPI) {
+                log('SpeechRecognition API is NOT available in this browser!', 'error');
+                setStatus('Not Supported', 'status-error');
             } else {
-                interimTranscript = transcript;
+                log('SpeechRecognition API is available. Creating instance...', 'info');
+
+                recognition = new SpeechRecognitionAPI();
+
+                // Log available properties
+                log(`recognition object created: ${recognition.constructor.name}`, 'info');
+
+                // Configuration
+                recognition.lang = 'ja-JP';
+                recognition.interimResults = true;
+                recognition.continuous = true;
+                recognition.maxAlternatives = 1;
+
+                log('Configuration set:', 'info');
+                log(`  lang: ${recognition.lang}`, 'info');
+                log(`  interimResults: ${recognition.interimResults}`, 'info');
+                log(`  continuous: ${recognition.continuous}`, 'info');
+                log(`  maxAlternatives: ${recognition.maxAlternatives}`, 'info');
+
+                // ========================================
+                // Event Handlers (All events)
+                // ========================================
+
+                // onstart - Fired when the service begins listening
+                recognition.onstart = (event) => {
+                    log('EVENT: onstart - Recognition service has started', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                    setStatus('Listening...', 'status-listening');
+                };
+
+                // onaudiostart - Fired when audio capture begins
+                recognition.onaudiostart = (event) => {
+                    log('EVENT: onaudiostart - Audio capturing has started', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onsoundstart - Fired when any sound is detected
+                recognition.onsoundstart = (event) => {
+                    log('EVENT: onsoundstart - Sound has been detected', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onspeechstart - Fired when speech is detected
+                recognition.onspeechstart = (event) => {
+                    log('EVENT: onspeechstart - Speech has been detected', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onspeechend - Fired when speech stops being detected
+                recognition.onspeechend = (event) => {
+                    log('EVENT: onspeechend - Speech has stopped being detected', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onsoundend - Fired when any sound stops being detected
+                recognition.onsoundend = (event) => {
+                    log('EVENT: onsoundend - Sound has stopped being detected', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onaudioend - Fired when audio capture ends
+                recognition.onaudioend = (event) => {
+                    log('EVENT: onaudioend - Audio capturing has ended', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                };
+
+                // onend - Fired when the service disconnects
+                recognition.onend = (event) => {
+                    log('EVENT: onend - Recognition service has disconnected', 'event');
+                    log(`  event.type: ${event.type}`, 'event');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'event');
+                    setStatus('Idle', 'status-idle');
+                };
+
+                // onerror - Fired when an error occurs
+                recognition.onerror = (event) => {
+                    log(`EVENT: onerror - An error occurred`, 'error');
+                    log(`  event.type: ${event.type}`, 'error');
+                    log(`  event.error: ${event.error}`, 'error');
+                    log(`  event.message: ${event.message || '(no message)'}`, 'error');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'error');
+
+                    // Detailed error descriptions
+                    const errorDescriptions = {
+                        'no-speech': 'No speech was detected.',
+                        'aborted': 'Speech input was aborted.',
+                        'audio-capture': 'Audio capture failed. Check microphone permissions.',
+                        'network': 'Network communication failed. Check internet connection and firewall.',
+                        'not-allowed': 'Microphone permission was denied.',
+                        'service-not-allowed': 'Speech recognition service is not allowed.',
+                        'bad-grammar': 'Grammar error in speech recognition.',
+                        'language-not-supported': 'The specified language is not supported.'
+                    };
+
+                    const description = errorDescriptions[event.error] || 'Unknown error';
+                    log(`  Description: ${description}`, 'error');
+
+                    setStatus(`Error: ${event.error}`, 'status-error');
+                };
+
+                // onnomatch - Fired when no match is found
+                recognition.onnomatch = (event) => {
+                    log('EVENT: onnomatch - No recognition match found', 'warning');
+                    log(`  event.type: ${event.type}`, 'warning');
+                    log(`  event.timeStamp: ${event.timeStamp}`, 'warning');
+                };
+
+                // onresult - Fired when a result is returned
+                recognition.onresult = (event) => {
+                    log(`EVENT: onresult - Recognition result received`, 'result');
+                    log(`  event.resultIndex: ${event.resultIndex}`, 'result');
+                    log(`  event.results.length: ${event.results.length}`, 'result');
+
+                    let interimTranscript = '';
+
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        const transcript = result[0].transcript;
+                        const confidence = result[0].confidence;
+                        const isFinal = result.isFinal;
+
+                        log(`  Result[${i}]:`, 'result');
+                        log(`    transcript: "${transcript}"`, 'result');
+                        log(`    confidence: ${confidence}`, 'result');
+                        log(`    isFinal: ${isFinal}`, 'result');
+                        log(`    alternatives: ${result.length}`, 'result');
+
+                        if (isFinal) {
+                            finalTranscript += transcript;
+                            log(`  -> Added to finalTranscript`, 'result');
+                        } else {
+                            interimTranscript = transcript;
+                        }
+                    }
+
+                    resultDiv.innerHTML = finalTranscript + '<i style="color:#999;">' + interimTranscript + '</i>';
+                };
+
+                log('All event handlers registered successfully', 'info');
             }
-            }
-            resultDiv.innerHTML = finalTranscript + '<i style="color:#ddd;">' + interimTranscript + '</i>';
+        } catch (error) {
+            log(`Error initializing SpeechRecognition: ${error.message}`, 'error');
+            log(`Stack: ${error.stack}`, 'error');
+            setStatus('Init Error', 'status-error');
         }
 
+        // ========================================
+        // Button Handlers
+        // ========================================
         startBtn.onclick = () => {
-            recognition.start();
-        }
-        stopBtn.onclick = () => {
-            recognition.stop();
-        }
-    </script>
+            log('--- START BUTTON CLICKED ---', 'info');
 
+            if (!recognition) {
+                log('Cannot start: recognition object is null', 'error');
+                return;
+            }
+
+            try {
+                log('Calling recognition.start()...', 'info');
+                finalTranscript = '';
+                resultDiv.innerHTML = 'Listening...';
+                recognition.start();
+                log('recognition.start() called successfully', 'info');
+            } catch (error) {
+                log(`Error calling start(): ${error.message}`, 'error');
+                log(`  This may occur if recognition is already started`, 'warning');
+            }
+        };
+
+        stopBtn.onclick = () => {
+            log('--- STOP BUTTON CLICKED ---', 'info');
+
+            if (!recognition) {
+                log('Cannot stop: recognition object is null', 'error');
+                return;
+            }
+
+            try {
+                log('Calling recognition.stop()...', 'info');
+                recognition.stop();
+                log('recognition.stop() called successfully', 'info');
+            } catch (error) {
+                log(`Error calling stop(): ${error.message}`, 'error');
+            }
+        };
+
+        clearLogBtn.onclick = () => {
+            logDiv.innerHTML = '';
+            log('Log cleared', 'info');
+        };
+
+        copyLogBtn.onclick = async () => {
+            const logEntries = logDiv.querySelectorAll('.log-entry');
+            const logText = Array.from(logEntries).map(entry => entry.textContent).join('\n');
+
+            try {
+                await navigator.clipboard.writeText(logText);
+                copyLogBtn.textContent = 'Copied!';
+                copyLogBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyLogBtn.textContent = 'Copy Log';
+                    copyLogBtn.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                // Fallback for browsers that don't support clipboard API
+                const textarea = document.createElement('textarea');
+                textarea.value = logText;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                copyLogBtn.textContent = 'Copied!';
+                copyLogBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyLogBtn.textContent = 'Copy Log';
+                    copyLogBtn.classList.remove('copied');
+                }, 2000);
+            }
+        };
+
+        // ========================================
+        // Network Status Monitor
+        // ========================================
+        window.addEventListener('online', () => {
+            log('NETWORK: Browser is now ONLINE', 'info');
+        });
+
+        window.addEventListener('offline', () => {
+            log('NETWORK: Browser is now OFFLINE', 'warning');
+        });
+
+        // Initial log
+        log('='.repeat(50), 'info');
+        log('Web Speech API Debug Sample initialized', 'info');
+        log(`Network status: ${navigator.onLine ? 'Online' : 'Offline'}`, 'info');
+        log('='.repeat(50), 'info');
+    </script>
+</body>
 </html>
